@@ -1,0 +1,10 @@
+{
+  "archiveRoot": {
+    "sha256": null,
+    "url": null
+  },
+  "description": "Placeholder metadata for previous-release compatibility fixtures.",
+  "enabled": false,
+  "fixtureId": "previous-releases-placeholder-v0",
+  "previousReleases": []
+}

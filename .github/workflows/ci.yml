@@ -1,0 +1,59 @@
+name: Nix CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - "**"
+    tags-ignore:
+      - "**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  CACHIX_CACHE_NAME: 2140-dev
+  CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+jobs:
+  evaluate:
+    name: Evaluate flake
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            extra-substituters = https://2140-dev.cachix.org
+            extra-trusted-public-keys = 2140-dev.cachix.org-1:0brdoxVmXjL5udKuI+vXXwdEjPInGQKjCiyJLReZBt8=
+
+      - name: Evaluate outputs
+        run: nix flake check --no-build --all-systems --print-build-logs
+
+  correctness:
+    name: Spark
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            extra-substituters = https://2140-dev.cachix.org
+            extra-trusted-public-keys = 2140-dev.cachix.org-1:0brdoxVmXjL5udKuI+vXXwdEjPInGQKjCiyJLReZBt8=
+
+      - uses: cachix/cachix-action@v17
+        if: ${{ env.CACHIX_AUTH_TOKEN != '' }}
+        with:
+          name: ${{ env.CACHIX_CACHE_NAME }}
+          authToken: "${{ env.CACHIX_AUTH_TOKEN }}"
+
+      - name: Build spark/correctness stage
+        run: nix build .#checks.x86_64-linux.correctness --print-build-logs

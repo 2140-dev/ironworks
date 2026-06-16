@@ -1,0 +1,12 @@
+{
+  "archive": {
+    "sha256": null,
+    "url": null
+  },
+  "blockHash": null,
+  "description": "Placeholder metadata for the first small deterministic IBD fixture.",
+  "enabled": false,
+  "fixtureId": "ibd-small-placeholder-v0",
+  "height": null,
+  "network": "regtest"
+}

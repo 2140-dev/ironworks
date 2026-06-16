@@ -1,0 +1,13 @@
+{
+  "archive": {
+    "sha256": null,
+    "url": null
+  },
+  "budget": {
+    "seconds": 0
+  },
+  "corpusId": "fuzz-corpus-placeholder-v0",
+  "description": "Placeholder metadata for the first pinned nightly fuzz corpus.",
+  "enabled": false,
+  "targets": []
+}
