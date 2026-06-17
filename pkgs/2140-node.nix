@@ -8,6 +8,11 @@
   boost,
   capnproto,
   git,
+  libevent,
+  openssl,
+  sqlite,
+  zeromq,
+  zlib,
   libsystemtap ? null,
   src,
   pnameSuffix ? "",
@@ -70,6 +75,11 @@ stdenv.mkDerivation {
   buildInputs = [
     boost
     capnproto
+    libevent
+    openssl
+    sqlite.dev
+    zeromq
+    zlib
   ]
   ++ lib.optionals withUsdt [ libsystemtap ]
   ++ extraBuildInputs;

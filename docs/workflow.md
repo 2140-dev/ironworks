@@ -86,9 +86,10 @@ Heavy staging jobs:
 - ASan/UBSan build and unit tests
 - TSan build and unit tests
 - MSan build-only until instrumented dependencies are packaged
-- scheduled pinned-corpus fuzzing
-- scheduled previous-release compatibility
-- scheduled deterministic IBD replay fixtures
+- fuzz target inventory report
+- valgrind fuzz smoke
+- cross-platform package builds
+- clang-tidy and iwyu reports
 
 If staging fails:
 
@@ -110,11 +111,14 @@ Current scheduled outputs:
 - `scheduled.previous-releases`
 - `scheduled.fuzz-corpus`
 - `scheduled.benchmark-artifact`
+- `scheduled.benchmark-report`
 
 The IBD, previous-release, and fuzz-corpus jobs currently validate metadata and
 emit scaffold reports until fixture storage and schedules are approved. The
 benchmark artifact is a Hydra-built closure that dedicated benchmark workers
-can fetch from the signed cache.
+can fetch from the signed cache. The benchmark report runs a small
+machine-readable benchmark sample inside Hydra for packaging signal only; stable
+performance history belongs on dedicated benchmark workers.
 
 ## Release
 

@@ -16,13 +16,17 @@ runCommand "2140-node-benchmark-artifact"
 
     linked=0
     for candidate in bitcoind bitcoin-cli bitcoin-bench bench_bitcoin; do
-      if [ -x "${nodePackage}/bin/$candidate" ]; then
-        ln -s "${nodePackage}/bin/$candidate" "$out/bin/$candidate"
-        linked=$((linked + 1))
-      fi
+      for program_dir in bin libexec; do
+        if [ -x "${nodePackage}/$program_dir/$candidate" ]; then
+          ln -s "${nodePackage}/$program_dir/$candidate" "$out/bin/$candidate"
+          linked=$((linked + 1))
+          break
+        fi
+      done
     done
 
     test -x "${nodePackage}/bin/bitcoind"
+    test -x "$out/bin/bench_bitcoin"
 
     jq -n \
       --arg package "${nodePackage}" \

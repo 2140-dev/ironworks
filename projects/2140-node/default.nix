@@ -8,6 +8,8 @@
 }:
 
 let
+  lib = pkgs.lib;
+
   aggregate = pkgs.callPackage ../../checks/aggregate.nix { };
 
   mkNode =
@@ -26,6 +28,15 @@ let
         inherit src;
         stdenv = pkgs.llvmPackages.stdenv;
         extraNativeBuildInputs = [ pkgs.llvmPackages.llvm ];
+      }
+      // args
+    );
+
+  mkCrossNode =
+    crossPkgs: args:
+    crossPkgs.callPackage ../../pkgs/2140-node.nix (
+      {
+        inherit src;
       }
       // args
     );
@@ -111,6 +122,27 @@ let
       installMan = false;
       sanitizers = "fuzzer";
     };
+
+    platform = {
+      pnameSuffix = "platform";
+      buildBitcoin = true;
+      buildDaemon = true;
+      buildCli = true;
+      buildTests = false;
+      runUnitTests = false;
+      buildBench = false;
+      buildFuzzBinary = false;
+      buildForFuzzing = false;
+      buildUtilChainstate = false;
+      buildKernelLib = false;
+      buildKernelTest = false;
+      reduceExports = true;
+      warningsAsErrors = false;
+      withEmbeddedAsmap = true;
+      withUsdt = false;
+      withExternalLibmultiprocess = false;
+      installMan = false;
+    };
   };
 
   packages =
@@ -122,6 +154,32 @@ let
       nodeBenchmarkArtifact = pkgs.callPackage ../../pkgs/benchmark-artifact.nix {
         nodePackage = nodeStagingFull;
       };
+      platformPackages = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+        node-platform-i686 = mkCrossNode pkgs.pkgsCross.gnu32 (
+          profile.platform
+          // {
+            pnameSuffix = "platform-i686";
+          }
+        );
+        node-platform-musl = mkCrossNode pkgs.pkgsCross.musl64 (
+          profile.platform
+          // {
+            pnameSuffix = "platform-musl";
+          }
+        );
+        node-platform-aarch64 = mkCrossNode pkgs.pkgsCross.aarch64-multiplatform (
+          profile.platform
+          // {
+            pnameSuffix = "platform-aarch64";
+          }
+        );
+        node-platform-armv7 = mkCrossNode pkgs.pkgsCross.armv7l-hf-multiplatform (
+          profile.platform
+          // {
+            pnameSuffix = "platform-armv7";
+          }
+        );
+      };
     in
     {
       default = nodeRelease;
@@ -131,7 +189,8 @@ let
       node-staging-full = nodeStagingFull;
       node-fuzz = nodeFuzz;
       node-benchmark-artifact = nodeBenchmarkArtifact;
-    };
+    }
+    // platformPackages;
 
   checks =
     let
@@ -153,6 +212,15 @@ let
       };
       fuzzSmoke = pkgs.callPackage ../../checks/fuzz-smoke.nix {
         nodePackage = nodeFuzz;
+      };
+      fuzzTargetsReport = pkgs.callPackage ../../checks/fuzz-targets-report.nix {
+        nodePackage = nodeFuzz;
+      };
+      valgrindFuzzSmoke = pkgs.callPackage ../../checks/valgrind-fuzz-smoke.nix {
+        nodePackage = nodeFuzz;
+      };
+      benchmarkReport = pkgs.callPackage ../../checks/benchmark-report.nix {
+        nodePackage = nodeStagingFull;
       };
       releaseInstallSmoke = pkgs.callPackage ../../checks/regtest-smoke.nix {
         nodePackage = nodeRelease;
@@ -203,6 +271,26 @@ let
           sanitizers = "memory";
         }
       );
+      clangTidyReport = pkgs.callPackage ../../checks/clang-tidy-report.nix {
+        inherit src;
+      };
+      iwyuReport = pkgs.callPackage ../../checks/iwyu-report.nix {
+        inherit src;
+      };
+      platformChecks = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+        staging-platform-i686 = packages.node-platform-i686;
+        staging-platform-musl = packages.node-platform-musl;
+        staging-platform-aarch64 = packages.node-platform-aarch64;
+        staging-platform-armv7 = packages.node-platform-armv7;
+      };
+      analysisChecks = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+        staging-analysis-clang-tidy-report = clangTidyReport;
+        staging-analysis-iwyu-report = iwyuReport;
+      };
+      fuzzChecks = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+        staging-fuzz-targets-report = fuzzTargetsReport;
+        staging-valgrind-fuzz-smoke = valgrindFuzzSmoke;
+      };
     in
     rec {
       correctness = aggregate "2140-node-correctness" [
@@ -257,45 +345,68 @@ let
       scheduled-previous-releases = hardenPreviousReleases;
       scheduled-fuzz-corpus = hardenFuzzCorpus;
       scheduled-benchmark-artifact = nodeBenchmarkArtifact;
-    };
+      scheduled-benchmark-report = benchmarkReport;
+    }
+    // platformChecks
+    // analysisChecks
+    // fuzzChecks;
 
-  hydraJobs = {
-    correctness = {
-      required = checks.correctness;
-      format = checks.correctness-format;
-      lint = checks.correctness-lint;
-      unit = checks.correctness-linux-unit;
-      regtest-smoke = checks.correctness-regtest-smoke;
-    };
-    staging = {
-      required = checks.staging;
-      full = checks.staging-full;
-      regtest-smoke = checks.staging-regtest-smoke;
-      bench-sanity = checks.staging-bench-sanity;
-      fuzz-smoke = checks.staging-fuzz-smoke;
-      platforms = { };
-      analysis = { };
-      heavy = {
-        asan-ubsan = checks.staging-asan-ubsan;
-        tsan = checks.staging-tsan;
-        msan-build = checks.staging-msan-build;
+  hydraJobs =
+    let
+      platformJobs = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+        i686 = checks.staging-platform-i686;
+        musl = checks.staging-platform-musl;
+        aarch64 = checks.staging-platform-aarch64;
+        armv7 = checks.staging-platform-armv7;
+      };
+      analysisJobs = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+        clang-tidy-report = checks.staging-analysis-clang-tidy-report;
+        iwyu-report = checks.staging-analysis-iwyu-report;
+      };
+      fuzzJobs = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+        targets-report = checks.staging-fuzz-targets-report;
+        valgrind-smoke = checks.staging-valgrind-fuzz-smoke;
+      };
+    in
+    {
+      correctness = {
+        required = checks.correctness;
+        format = checks.correctness-format;
+        lint = checks.correctness-lint;
+        unit = checks.correctness-linux-unit;
+        regtest-smoke = checks.correctness-regtest-smoke;
+      };
+      staging = {
+        required = checks.staging;
+        full = checks.staging-full;
+        regtest-smoke = checks.staging-regtest-smoke;
+        bench-sanity = checks.staging-bench-sanity;
+        fuzz-smoke = checks.staging-fuzz-smoke;
+        fuzz = fuzzJobs;
+        platforms = platformJobs;
+        analysis = analysisJobs;
+        heavy = {
+          asan-ubsan = checks.staging-asan-ubsan;
+          tsan = checks.staging-tsan;
+          msan-build = checks.staging-msan-build;
+        };
+      };
+      release = {
+        required = checks.release;
+        package = checks.release-package;
+        install-smoke = checks.release-install-smoke;
+        manifest = checks.release-manifest;
+        checklist = checks.release-checklist;
+      };
+      scheduled = {
+        required = checks.scheduled-required;
+        ibd-small = checks.scheduled-ibd-small;
+        previous-releases = checks.scheduled-previous-releases;
+        fuzz-corpus = checks.scheduled-fuzz-corpus;
+        benchmark-artifact = checks.scheduled-benchmark-artifact;
+        benchmark-report = checks.scheduled-benchmark-report;
       };
     };
-    release = {
-      required = checks.release;
-      package = checks.release-package;
-      install-smoke = checks.release-install-smoke;
-      manifest = checks.release-manifest;
-      checklist = checks.release-checklist;
-    };
-    scheduled = {
-      required = checks.scheduled-required;
-      ibd-small = checks.scheduled-ibd-small;
-      previous-releases = checks.scheduled-previous-releases;
-      fuzz-corpus = checks.scheduled-fuzz-corpus;
-      benchmark-artifact = checks.scheduled-benchmark-artifact;
-    };
-  };
 in
 {
   inherit packages checks hydraJobs;
