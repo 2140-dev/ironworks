@@ -1,6 +1,7 @@
 {
   lib,
   stdenv,
+  buildPackages,
   cmake,
   ninja,
   pkg-config,
@@ -37,6 +38,10 @@
   extraNativeBuildInputs ? [ ],
   extraBuildInputs ? [ ],
   extraCmakeFlags ? [ ],
+  extraCmakeFlagsArray ? [ ],
+  extraCheckEnv ? "",
+  cmakeBuildType ? "Release",
+  mpgenExecutable ? null,
 }:
 
 let
@@ -52,6 +57,7 @@ let
   };
 
   pname = "2140-node" + lib.optionalString (pnameSuffix != "") "-${pnameSuffix}";
+  nativeCapnproto = buildPackages.capnproto;
 in
 stdenv.mkDerivation {
   inherit pname;
@@ -61,14 +67,21 @@ stdenv.mkDerivation {
 
   strictDeps = true;
   cmakeBuildDir = "build";
+  inherit cmakeBuildType;
+
+  preConfigure = lib.optionalString (extraCmakeFlagsArray != [ ]) ''
+    cmakeFlagsArray+=(
+      ${lib.concatMapStringsSep "\n" lib.escapeShellArg extraCmakeFlagsArray}
+    )
+  '';
 
   nativeBuildInputs = [
-    cmake
-    ninja
-    pkg-config
-    python3
-    capnproto
-    git
+    buildPackages.cmake
+    buildPackages.ninja
+    buildPackages.pkg-config
+    buildPackages.python3
+    nativeCapnproto
+    buildPackages.git
   ]
   ++ extraNativeBuildInputs;
 
@@ -104,13 +117,19 @@ stdenv.mkDerivation {
     (lib.cmakeBool "WITH_USDT" withUsdt)
     (lib.cmakeBool "WITH_EXTERNAL_LIBMULTIPROCESS" withExternalLibmultiprocess)
     (lib.cmakeBool "INSTALL_MAN" installMan)
+    "-DCAPNP_EXECUTABLE=${nativeCapnproto}/bin/capnp"
+    "-DCAPNPC_CXX_EXECUTABLE=${nativeCapnproto}/bin/capnpc-c++"
+    "-DCAPNP_INCLUDE_DIRECTORY=${nativeCapnproto}/include"
+    "-Dcapnp_PREFIX=${nativeCapnproto}"
   ]
+  ++ lib.optionals (mpgenExecutable != null) [ "-DMPGEN_EXECUTABLE=${mpgenExecutable}" ]
   ++ lib.optionals (sanitizers != null) [ "-DSANITIZERS=${sanitizers}" ]
   ++ extraCmakeFlags;
 
   doCheck = runUnitTests;
   checkPhase = ''
     runHook preCheck
+    ${extraCheckEnv}
     ctest --output-on-failure --parallel "$NIX_BUILD_CORES" --stop-on-failure
     runHook postCheck
   '';

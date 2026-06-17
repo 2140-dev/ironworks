@@ -177,6 +177,11 @@ mind:
 - `libbitcoinkernel.pc` can be generated with absolute Nix install paths
   incorrectly prefixed by `${prefix}`. The package normalizes the installed
   `libdir` and `includedir` lines in `postInstall`.
+- Cross builds must use native Cap'n Proto code generators. The package passes
+  host-built `capnp`, `capnpc-c++`, and `mpgen` into CMake so aarch64/armv7
+  builds do not try to execute target binaries during code generation.
+- SQLite dependency checks are disabled for cross-platform dependency builds;
+  the node package still builds against the cross SQLite output.
 - `script_assets_tests` is skipped by the upstream CTest run in the current
   local build.
 
@@ -209,6 +214,23 @@ Observed local results:
 Heavy sanitizer jobs evaluated successfully through `nix flake check
 --no-build --all-systems`, but were not built locally during initial setup.
 
+Additional Forge parity validation on 2026-06-17:
+
+```sh
+nix build .#checks.x86_64-linux.staging-platform-i686 .#checks.x86_64-linux.staging-platform-musl .#checks.x86_64-linux.staging-platform-aarch64 .#checks.x86_64-linux.staging-platform-armv7 --no-link --print-build-logs --accept-flake-config --option eval-cache false --keep-going
+nix build .#checks.x86_64-linux.staging-asan-ubsan --no-link --print-build-logs --accept-flake-config --option eval-cache false
+nix build .#checks.x86_64-linux.staging-tsan --no-link --print-build-logs --accept-flake-config --option eval-cache false
+nix build .#checks.x86_64-linux.staging-msan-build --no-link --print-build-logs --accept-flake-config --option eval-cache false
+```
+
+Observed local results:
+
+- Linux cross platform jobs build for i686, musl, aarch64, and armv7.
+- ASan/UBSan and TSan each complete 322 CTest entries with zero failures and
+  the existing upstream `script_assets_tests` skip.
+- MSan completes the full build-only target. It remains non-runnable until the
+  dependency stack is instrumented for MSan.
+
 ## Known Limitations
 
 - The top-level flake currently exposes one default adapter directly. Because
@@ -217,8 +239,8 @@ Heavy sanitizer jobs evaluated successfully through `nix flake check
 - Saugus does not exist yet. Create it as the first consumer deployment before
   adding production Hydra host config, lock branches, cache signing config, or
   benchmark worker inventory.
-- ASan/UBSan and TSan are implemented as staging/Hydra jobs but need Hydra
-  builder capacity before they should gate promotion.
+- ASan/UBSan and TSan are implemented and locally green as staging/Hydra jobs
+  but need Hydra builder observations before they should gate promotion.
 - MSan is build-only until instrumented dependencies are packaged.
 - IBD replay, previous-release compatibility, long fuzz budgets, and pinned
   fuzz corpora are documented as future staging/release work.

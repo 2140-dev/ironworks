@@ -296,21 +296,21 @@ to a scheduled stage, or explicitly dropped with a reason.
 | Linux unit/package | `spark` | Covered by `checks.correctness-linux-unit`. | Keep in Spark. |
 | Regtest smoke | `spark` | Covered by `checks.correctness-regtest-smoke`. | Keep in Spark. |
 | `test ancestor commits` | `spark` or `forge` | Missing. | Add a separate non-default PR job or Hydra job; do not put it in required Spark until runtime is known. |
-| macOS native | `forge` | Missing. | Add Darwin package/check output and run on an `aarch64-darwin` builder. |
+| macOS native | `forge` | Darwin package/check outputs evaluate. | Run on an `aarch64-darwin` builder before gating. |
 | macOS native fuzz | `harden` | Missing. | Add Darwin fuzz build/check if Darwin fuzzing remains supported. |
-| iwyu | `forge` or scheduled `harden` | Missing. | Add an IWYU/codegen check, initially non-gating. |
-| 32-bit ARM cross | `forge` | Missing. | Add cross package profile and Hydra job. |
+| iwyu | `forge` or scheduled `harden` | Report job exists at `staging.analysis.iwyu-report`. | Keep non-gating until report quality is reviewed. |
+| 32-bit ARM cross | `forge` | Ported as `staging.platforms.armv7`; green locally. | Observe on Hydra before gating. |
 | macOS cross arm64 | `forge` | Missing. | Add Darwin cross package profile and Hydra job. |
 | macOS cross x86_64 | `forge` | Missing. | Add Darwin x86_64 cross package profile and Hydra job. |
 | FreeBSD cross | `forge` | Missing. | Add FreeBSD cross package profile and Hydra job. |
-| i686 | `forge` | Missing. | Add i686 package profile and Hydra job. |
-| `fuzzer,address,undefined,integer` | `harden` | Partially covered by `staging.fuzz-smoke`, `staging.heavy.asan-ubsan`, and the `scheduled.fuzz-corpus` metadata scaffold. | Add a real fuzz+sanitizer target with corpus/budget scheduling. |
+| i686 | `forge` | Ported as `staging.platforms.i686`; green locally. | Observe on Hydra before gating. |
+| `fuzzer,address,undefined,integer` | `forge`/`harden` | Forge coverage exists through `staging.fuzz-smoke`, `staging.fuzz.targets-report`, `staging.fuzz.valgrind-smoke`, and locally green `staging.heavy.asan-ubsan`; `scheduled.fuzz-corpus` remains metadata-only. | Add real corpus/budget scheduling for harden. |
 | previous releases | `harden` | Metadata scaffold at `scheduled.previous-releases`. | Add previous-release fixture/package job and scheduled report. |
-| Alpine/musl | `forge` | Missing. | Add musl package profile and Hydra job. |
-| tidy | `forge` or scheduled `harden` | Missing. | Add clang-tidy check, initially non-gating. |
-| TSan | `forge` heavy | Partially covered by `staging.heavy.tsan`. | Build on Hydra, then decide gating after stability. |
+| Alpine/musl | `forge` | Ported as `staging.platforms.musl`; green locally. | Observe on Hydra before gating. |
+| tidy | `forge` or scheduled `harden` | Report job exists at `staging.analysis.clang-tidy-report`. | Keep non-gating until report quality is reviewed. |
+| TSan | `forge` heavy | Ported as `staging.heavy.tsan`; green locally. | Build on Hydra, then decide gating after stability. |
 | MSan fuzz | `harden` | Planned under the `scheduled.fuzz-corpus` scaffold. | Add instrumented fuzz MSan job if dependencies can be packaged. |
-| MSan | `forge` heavy | Build-only covered by `staging.heavy.msan-build`. | Package instrumented deps before making runtime-gating. |
+| MSan | `forge` heavy | Build-only covered by `staging.heavy.msan-build`; green locally. | Package instrumented deps before making runtime-gating. |
 
 Tasks:
 
@@ -482,10 +482,10 @@ staging snapshots.
 
 | ID | Owner | Task | Acceptance check |
 | --- | --- | --- | --- |
-| 7.1 | Codex | Add `staging.heavy.asan-ubsan` to Hydra and build it on real builders. | Job is green for one staging snapshot. |
-| 7.2 | Codex | Add `staging.heavy.tsan` to Hydra and build it on real builders. | Job is green or has a tracked issue. |
+| 7.1 | Codex | Publish the locally green `staging.heavy.asan-ubsan` job through Saugus and build it on real builders. | Job is green for one staging snapshot. |
+| 7.2 | Codex | Publish the locally green `staging.heavy.tsan` job through Saugus and build it on real builders. | Job is green or has a tracked issue. |
 | 7.3 | Codex | Keep `staging.heavy.msan-build` build-only until instrumented dependencies are packaged. | MSan status is explicit in `docs/ci-parity.md`. |
-| 7.4 | Codex | Add cross/platform jobs: i686, armhf, Darwin cross arm64, Darwin cross x86_64, FreeBSD cross, musl. | Each job evaluates; supported jobs build in Hydra. |
+| 7.4 | Codex | Publish the locally green i686, armhf, aarch64, and musl platform jobs through Saugus; add Darwin cross arm64, Darwin cross x86_64, and FreeBSD cross later. | Each supported job evaluates; Linux platform jobs build in Hydra. |
 | 7.5 | Codex | Add native Darwin job output for `aarch64-darwin`. | Runs on a Darwin builder, or is marked blocked on hardware. |
 | 7.6 | Codex | Add iwyu and clang-tidy jobs as non-gating analysis first. | Jobs produce reports and do not block staging initially. |
 | 7.7 | You | Decide which forge jobs are required gates after observing runtime/flakiness. | Hydra jobset marks required jobs; docs updated. |

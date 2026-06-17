@@ -41,6 +41,52 @@ let
       // args
     );
 
+  dontCheck =
+    package:
+    package.overrideAttrs (_: {
+      doCheck = false;
+      doInstallCheck = false;
+    });
+
+  checkOnly =
+    package:
+    package.overrideAttrs (_: {
+      installPhase = ''
+        runHook preInstall
+        mkdir -p "$out"
+        runHook postInstall
+      '';
+    });
+
+  sanitizerCheckEnv = {
+    asanUbsan = ''
+      sanitizer_suppressions="$PWD/test/sanitizer_suppressions"
+      if [ ! -d "$sanitizer_suppressions" ]; then
+        sanitizer_suppressions="$PWD/../test/sanitizer_suppressions"
+      fi
+      export ASAN_OPTIONS="detect_leaks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1"
+      export LSAN_OPTIONS="suppressions=$sanitizer_suppressions/lsan"
+      ubsan_suppressions="$(mktemp -t ubsan-suppressions.XXXXXX)"
+      cp "$sanitizer_suppressions/ubsan" "$ubsan_suppressions"
+      # Clang can attribute the expected CBloomFilter::Hash unsigned wrap to its caller after inlining.
+      cat >> "$ubsan_suppressions" <<'EOF'
+      unsigned-integer-overflow:CBloomFilter::insert
+      unsigned-integer-overflow:util/bitset.h
+      unsigned-integer-overflow:random.h
+      EOF
+      export UBSAN_OPTIONS="suppressions=$ubsan_suppressions:print_stacktrace=1:halt_on_error=1:report_error_type=1"
+      ulimit -s 512
+    '';
+    tsan = ''
+      sanitizer_suppressions="$PWD/test/sanitizer_suppressions"
+      if [ ! -d "$sanitizer_suppressions" ]; then
+        sanitizer_suppressions="$PWD/../test/sanitizer_suppressions"
+      fi
+      export TSAN_OPTIONS="suppressions=$sanitizer_suppressions/tsan:halt_on_error=1:second_deadlock_stack=1"
+      ulimit -s 512
+    '';
+  };
+
   profile = {
     release = {
       pnameSuffix = "release";
@@ -151,34 +197,38 @@ let
       nodeCorrectness = mkNode profile.correctness;
       nodeStagingFull = mkNode profile.stagingFull;
       nodeFuzz = mkLlvmNode profile.fuzz;
+      nodeMpgen = pkgs.callPackage ../../pkgs/2140-node-mpgen.nix {
+        inherit src;
+      };
       nodeBenchmarkArtifact = pkgs.callPackage ../../pkgs/benchmark-artifact.nix {
         nodePackage = nodeStagingFull;
       };
+      platformCodegen = {
+        mpgenExecutable = "${nodeMpgen}/bin/mpgen";
+      };
+      mkPlatformNode =
+        crossPkgs: args:
+        mkCrossNode crossPkgs (
+          profile.platform
+          // platformCodegen
+          // {
+            sqlite = dontCheck crossPkgs.sqlite;
+          }
+          // args
+        );
       platformPackages = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-        node-platform-i686 = mkCrossNode pkgs.pkgsCross.gnu32 (
-          profile.platform
-          // {
-            pnameSuffix = "platform-i686";
-          }
-        );
-        node-platform-musl = mkCrossNode pkgs.pkgsCross.musl64 (
-          profile.platform
-          // {
-            pnameSuffix = "platform-musl";
-          }
-        );
-        node-platform-aarch64 = mkCrossNode pkgs.pkgsCross.aarch64-multiplatform (
-          profile.platform
-          // {
-            pnameSuffix = "platform-aarch64";
-          }
-        );
-        node-platform-armv7 = mkCrossNode pkgs.pkgsCross.armv7l-hf-multiplatform (
-          profile.platform
-          // {
-            pnameSuffix = "platform-armv7";
-          }
-        );
+        node-platform-i686 = mkPlatformNode pkgs.pkgsCross.gnu32 {
+          pnameSuffix = "platform-i686";
+        };
+        node-platform-musl = mkPlatformNode pkgs.pkgsCross.musl64 {
+          pnameSuffix = "platform-musl";
+        };
+        node-platform-aarch64 = mkPlatformNode pkgs.pkgsCross.aarch64-multiplatform {
+          pnameSuffix = "platform-aarch64";
+        };
+        node-platform-armv7 = mkPlatformNode pkgs.pkgsCross.armv7l-hf-multiplatform {
+          pnameSuffix = "platform-armv7";
+        };
       };
     in
     {
@@ -188,6 +238,7 @@ let
       node-correctness = nodeCorrectness;
       node-staging-full = nodeStagingFull;
       node-fuzz = nodeFuzz;
+      node-mpgen = nodeMpgen;
       node-benchmark-artifact = nodeBenchmarkArtifact;
     }
     // platformPackages;
@@ -198,7 +249,11 @@ let
       nodeStagingFull = packages.node-staging-full;
       nodeRelease = packages.node-release;
       nodeFuzz = packages.node-fuzz;
+      nodeMpgen = packages.node-mpgen;
       nodeBenchmarkArtifact = packages.node-benchmark-artifact;
+      nativeCodegen = {
+        mpgenExecutable = "${nodeMpgen}/bin/mpgen";
+      };
 
       lint = pkgs.callPackage ../../checks/fast-lint.nix { inherit src; };
       regtestSmoke = pkgs.callPackage ../../checks/regtest-smoke.nix {
@@ -219,6 +274,20 @@ let
       valgrindFuzzSmoke = pkgs.callPackage ../../checks/valgrind-fuzz-smoke.nix {
         nodePackage = nodeFuzz;
       };
+      asanPresetCmakeFlagsArray = [
+        (lib.cmakeFeature "APPEND_CPPFLAGS" "-DARENA_DEBUG -DDEBUG_LOCKORDER")
+        (lib.cmakeFeature "APPEND_CXXFLAGS" "-std=c++23")
+        (lib.cmakeFeature "CMAKE_C_FLAGS" "-ftrivial-auto-var-init=pattern")
+        (lib.cmakeFeature "CMAKE_CXX_FLAGS" "-ftrivial-auto-var-init=pattern")
+      ];
+      tsanPresetCmakeFlagsArray = [
+        (lib.cmakeFeature "APPEND_CPPFLAGS" "-DARENA_DEBUG -DDEBUG_LOCKCONTENTION -D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES")
+      ];
+      msanPresetCmakeFlagsArray = [
+        (lib.cmakeFeature "APPEND_CPPFLAGS" "-U_FORTIFY_SOURCE")
+        (lib.cmakeFeature "CMAKE_C_FLAGS_DEBUG" "")
+        (lib.cmakeFeature "CMAKE_CXX_FLAGS_DEBUG" "")
+      ];
       benchmarkReport = pkgs.callPackage ../../checks/benchmark-report.nix {
         nodePackage = nodeStagingFull;
       };
@@ -249,27 +318,44 @@ let
         corpusMetadata = ../../harden/fixtures/fuzz-corpus.example.json;
       };
 
-      asanUbsan = mkLlvmNode (
-        profile.correctness
-        // {
-          pnameSuffix = "asan-ubsan";
-          sanitizers = "address,undefined,float-divide-by-zero,integer";
-        }
+      asanUbsan = checkOnly (
+        mkLlvmNode (
+          profile.correctness
+          // nativeCodegen
+          // {
+            pnameSuffix = "asan-ubsan";
+            cmakeBuildType = "None";
+            sanitizers = "address,float-divide-by-zero,integer,undefined";
+            extraCmakeFlagsArray = asanPresetCmakeFlagsArray;
+            extraCheckEnv = sanitizerCheckEnv.asanUbsan;
+          }
+        )
       );
-      tsan = mkLlvmNode (
-        profile.correctness
-        // {
-          pnameSuffix = "tsan";
-          sanitizers = "thread";
-        }
+      tsan = checkOnly (
+        mkLlvmNode (
+          profile.correctness
+          // nativeCodegen
+          // {
+            pnameSuffix = "tsan";
+            cmakeBuildType = "None";
+            sanitizers = "thread";
+            extraCmakeFlagsArray = tsanPresetCmakeFlagsArray;
+            extraCheckEnv = sanitizerCheckEnv.tsan;
+          }
+        )
       );
-      msanBuild = mkLlvmNode (
-        profile.correctness
-        // {
-          pnameSuffix = "msan-build";
-          runUnitTests = false;
-          sanitizers = "memory";
-        }
+      msanBuild = checkOnly (
+        mkLlvmNode (
+          profile.correctness
+          // nativeCodegen
+          // {
+            pnameSuffix = "msan-build";
+            cmakeBuildType = "Debug";
+            runUnitTests = false;
+            sanitizers = "memory";
+            extraCmakeFlagsArray = msanPresetCmakeFlagsArray;
+          }
+        )
       );
       clangTidyReport = pkgs.callPackage ../../checks/clang-tidy-report.nix {
         inherit src;
